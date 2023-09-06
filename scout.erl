@@ -36,8 +36,9 @@ move() ->
 %% ---------------------------------------------------------------------------
 
 init([{PosX, PosY, MazeMap, ParentPid, Path}]) ->
-  io:format("My PID is: ~p~n", [self()]),
-  gen_server:cast(?MODULE, explore),
+  io:format("-------------------------------My PID is: ~p---------------------------------~n", [self()]),
+  io:format("State is ~p~n~p~n~p~n~p~n~p~n", [PosX, PosY, MazeMap, ParentPid, Path]),
+  gen_server:cast(self(), explore),
   {ok, #state{
     x_y_cord = {PosX, PosY},
     map = MazeMap,
@@ -60,29 +61,35 @@ handle_cast(explore,
       parent = _ParentPid,
       path = Path
     } = State) ->
+  io:format("State~p~n", [State]),
   io:format("~p~nExploring!", [self()]),
-  io:format("Result1: ~p~n", [check_next_move(X, Y, Map)]),
-  Result = check_next_move(X, Y, Map),
+  Ra = check_next_move(X, Y, Map),
+  io:format("Ra~p~n", [Ra]),
+  Result = lists:filter(fun({_, Xpos, Ypos}) -> not lists:member({Xpos, Ypos}, Path) end, Ra),
   io:format("Result: ~p~n", [Result]),
-  {_Verdict, NewState} = case Result of
+  {Verdict, NewState} = case Result of
     [] ->
+      io:format("------------------------> dead~n"),
       {dead_end, State};
     [{finish, NewX, NewY}] ->
+      io:format("------------------------> finish~n"),
       NewS = State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
       {finish, NewS};
     [{"*", NewX, NewY}] ->
-      NewS =  State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
+      io:format("------------------------> explore~n"),
+      NewS = State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
       {explore, NewS};
     _ ->
-      [spawn_scouts(R, Map, self(), Path) || R <- Result],
+      io:format("------------------------> idle~n"),
+      [spawn_scouts(R, Map, self(), Path) || {_, _NewX, _NewY}  = R <- Result],
       {idle, State}
   end,
-  %gen_server:cast(?MODULE, Verdict),
+  gen_server:cast(self(), Verdict),
   {noreply, NewState};
 handle_cast(idle, State) ->
   %% Process has spawned other processes to search path
   %% Waiting for the reply from spawned processes
-  io:format("Going to idle state!"),
+  io:format("Going to idle state!~n"),
   {noreply, State};
 handle_cast(finish, State) ->
   %% The finish has been reached
@@ -141,12 +148,13 @@ check_next_move(_, Y, Map) when Y == length(Map) ->
   throw("Crashed in to the wall!!!");
 check_next_move(X, Y, Map) ->
   io:format("3~n"),
+  %check_next_move(X, Y, Map, length(lists:nth(1, Map))).%,
   Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
   Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
   Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
   io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
   Check_for_finish = fun(Val, PosX, PosY, Maze) ->
-    case PosY == length(lists:nth(1, Maze)) andalso Val == "*" of
+    case PosX == length(lists:nth(1, Maze)) andalso Val == "*" of
     true ->
       {finish, PosX, PosY};
     false ->
@@ -156,9 +164,21 @@ check_next_move(X, Y, Map) ->
   [Check_for_finish(Value, XPos, YPos, Map)
     || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
 
+%check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
+%  io:format("3_1~n"),
+%  [{finish, X, Y}];
+%check_next_move(X, Y, Map, _MapWidth) ->
+%  io:format("3_2~n"),
+%  Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
+%  Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
+%  Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
+%  io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
+%  [{Value, XPos, YPos}
+%    || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
 
 spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
+  io:format("Args: ~p~n~p~n~p~n~p~n~p~n", [X, Y, Map, ParentPid, Path]),
   ProcName = "scout_" ++ integer_to_list(erlang:unique_integer([positive])),
   io:format("ProcName: ~p~n", [ProcName]),
-  NewP = gen_server:start_link({local, list_to_atom(ProcName)}, ?MODULE, [{X, Y, Map, ParentPid, Path}], []),
+  NewP = gen_server:start_link({local, list_to_atom(ProcName)}, ?MODULE, [{X, Y, Map, ParentPid, [{X, Y} |Path]}], []),
   io:format("Spawned ~p~n", [NewP]).
