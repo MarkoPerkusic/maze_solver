@@ -65,22 +65,23 @@ handle_cast(explore,
   io:format("~p~nExploring!", [self()]),
   Ra = check_next_move(X, Y, Map),
   io:format("Ra~p~n", [Ra]),
-  Result = lists:filter(fun({_, Xpos, Ypos}) -> not lists:member({Xpos, Ypos}, Path) end, Ra),
+  %Result = lists:filter(fun({_, Xpos, Ypos}) -> not lists:member({Xpos, Ypos}, Path) end, Ra),
+  Result = lists:filter(fun(R) -> path_filter(R, Path) end, Ra),
   io:format("Result: ~p~n", [Result]),
   {Verdict, NewState} = case Result of
     [] ->
-      io:format("------------------------> dead~n"),
+      io:format("------------------------> ~p dead~n", [self()]),
       {dead_end, State};
     [{finish, NewX, NewY}] ->
       io:format("------------------------> finish~n"),
-      NewS = State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
+      NewS = State#state{x_y_cord = {NewX, NewY}},
       {finish, NewS};
     [{"*", NewX, NewY}] ->
-      io:format("------------------------> explore~n"),
+      io:format("------------------------> ~p explore~n", [self()]),
       NewS = State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
       {explore, NewS};
     _ ->
-      io:format("------------------------> idle~n"),
+      io:format("------------------------> ~p idle~n", [self()]),
       [spawn_scouts(R, Map, self(), Path) || {_, _NewX, _NewY}  = R <- Result],
       {idle, State}
   end,
@@ -89,16 +90,16 @@ handle_cast(explore,
 handle_cast(idle, State) ->
   %% Process has spawned other processes to search path
   %% Waiting for the reply from spawned processes
-  io:format("Going to idle state!~n"),
+  io:format("Going to idle state!~n~p~n", [State]),
   {noreply, State};
 handle_cast(finish, State) ->
   %% The finish has been reached
-  io:format("Exit reached!"),
-  io:format("Path: ~p~n", [State#state.path]),
+  io:format("Exit reached!~n"),
+  io:format("Path: ~p~n", [lists:reverse(State#state.path)]),
   {noreply, State};
 handle_cast(dead_end, State) ->
   %% The spawned process has reached dead end
-  io:format("Dead end reached!"),
+  io:format("Dead end reached!~n~p~n", [State]),
   {noreply, State};
 handle_cast(stop, State) ->
   %% Terminate
@@ -135,6 +136,14 @@ load_maze() ->
     "#######"
   ].
 
+path_filter({finish, _X,_Y}, _Path) ->
+  %% Exit from the maze detected
+  true;
+path_filter({_Val, X, Y}, Path) ->
+  %% Filter out the positions that are
+  %% already in Path to prevent walk in the circle
+  not lists:member({X, Y}, Path).
+
 check_next_move(0, 0, Map) ->
   io:format("1~n"),
   %% Search for the entry point that is on the left side of the maze.
@@ -148,37 +157,38 @@ check_next_move(_, Y, Map) when Y == length(Map) ->
   throw("Crashed in to the wall!!!");
 check_next_move(X, Y, Map) ->
   io:format("3~n"),
-  %check_next_move(X, Y, Map, length(lists:nth(1, Map))).%,
+  check_next_move(X, Y, Map, length(lists:nth(1, Map))).%,
+  %Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
+  %Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
+  %Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
+  %io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
+  %Check_for_finish = fun(Val, PosX, PosY, Maze) ->
+  %  case PosX == length(lists:nth(1, Maze)) andalso Val == "*" of
+  %  true ->
+  %    {finish, PosX, PosY};
+  %  false ->
+  %    {Val, PosX, PosY}
+  %  end
+  %end,
+  %[Check_for_finish(Value, XPos, YPos, Map)
+  %  || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
+
+check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
+  io:format("3_1~n"),
+  [{finish, X, Y}];
+check_next_move(X, Y, Map, _MapWidth) ->
+  io:format("3_2~n"),
   Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
   Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
   Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
   io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
-  Check_for_finish = fun(Val, PosX, PosY, Maze) ->
-    case PosX == length(lists:nth(1, Maze)) andalso Val == "*" of
-    true ->
-      {finish, PosX, PosY};
-    false ->
-      {Val, PosX, PosY}
-    end
-  end,
-  [Check_for_finish(Value, XPos, YPos, Map)
+  [{Value, XPos, YPos}
     || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
-
-%check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
-%  io:format("3_1~n"),
-%  [{finish, X, Y}];
-%check_next_move(X, Y, Map, _MapWidth) ->
-%  io:format("3_2~n"),
-%  Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
-%  Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
-%  Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
-%  io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
-%  [{Value, XPos, YPos}
-%    || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
 
 spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
   io:format("Args: ~p~n~p~n~p~n~p~n~p~n", [X, Y, Map, ParentPid, Path]),
   ProcName = "scout_" ++ integer_to_list(erlang:unique_integer([positive])),
+  %ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
   io:format("ProcName: ~p~n", [ProcName]),
   NewP = gen_server:start_link({local, list_to_atom(ProcName)}, ?MODULE, [{X, Y, Map, ParentPid, [{X, Y} |Path]}], []),
   io:format("Spawned ~p~n", [NewP]).
