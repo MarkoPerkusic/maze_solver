@@ -1,6 +1,6 @@
 -module(scout).
 -behaviour(gen_server).
--record(state, { x_y_cord, map, parent, path}).
+-record(state, { x_y_cord, map, parent, path, monitored}).
 
 
 -export([start_link/1, stop/1, show_progress/0, move/0]).
@@ -17,7 +17,7 @@ start_link(ParentPid) ->
   gen_server:start_link(
       {local, ?MODULE},
       ?MODULE,
-      [{0, 0, Maze_map, ParentPid, []}],
+      [{0, 0, Maze_map, ParentPid, [], []}],
       []
   ).
 
@@ -35,7 +35,7 @@ move() ->
 %% gen_server functions
 %% ---------------------------------------------------------------------------
 
-init([{PosX, PosY, MazeMap, ParentPid, Path}]) ->
+init([{PosX, PosY, MazeMap, ParentPid, Path, Monitored}]) ->
   io:format("-------------------------------My PID is: ~p---------------------------------~n", [self()]),
   io:format("State is ~p~n~p~n~p~n~p~n~p~n", [PosX, PosY, MazeMap, ParentPid, Path]),
   gen_server:cast(self(), explore),
@@ -43,7 +43,8 @@ init([{PosX, PosY, MazeMap, ParentPid, Path}]) ->
     x_y_cord = {PosX, PosY},
     map = MazeMap,
     parent = ParentPid,
-    path = Path}
+    path = Path,
+    monitored = Monitored}
   }.
 
 handle_call(stop, _From, State) ->
@@ -59,7 +60,8 @@ handle_cast(explore,
       x_y_cord = {X, Y},
       map = Map,
       parent = _ParentPid,
-      path = Path
+      path = Path,
+      monitored = Monitored
     } = State) ->
   io:format("State~p~n", [State]),
   io:format("~p~nExploring!", [self()]),
@@ -82,8 +84,9 @@ handle_cast(explore,
       {explore, NewS};
     _ ->
       io:format("------------------------> ~p idle~n", [self()]),
-      [spawn_scouts(R, Map, self(), Path) || {_, _NewX, _NewY}  = R <- Result],
-      {idle, State}
+      Refs = [spawn_scouts(R, Map, self(), Path) || {_, _NewX, _NewY}  = R <- Result],
+      NewS = State#state{monitored = lists:append(Refs, Monitored)},
+      {idle, NewS}
   end,
   gen_server:cast(self(), Verdict),
   {noreply, NewState};
@@ -109,10 +112,17 @@ handle_cast(_Arg0, _Arg1) ->
   erlang:error(not_implemented).
 
 handle_info(Info, State) ->
-  error_logger:info_msg("Info: ~p~n", [Info]),
+  io:format("Info: ~p~n", [Info]),
   {noreply, State}.
 
 terminate(State) ->
+  %% Terminate process and his spawned processes.
+  lists:foreach(
+    fun(MonitoredPid) ->
+      gen_server:cast(MonitoredPid, stop)
+    end,
+    State#state.monitored
+  ),
   io:format("TERMINATING!~n"),
   {stop, normal, State}.
 
@@ -157,21 +167,7 @@ check_next_move(_, Y, Map) when Y == length(Map) ->
   throw("Crashed in to the wall!!!");
 check_next_move(X, Y, Map) ->
   io:format("3~n"),
-  check_next_move(X, Y, Map, length(lists:nth(1, Map))).%,
-  %Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
-  %Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
-  %Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
-  %io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
-  %Check_for_finish = fun(Val, PosX, PosY, Maze) ->
-  %  case PosX == length(lists:nth(1, Maze)) andalso Val == "*" of
-  %  true ->
-  %    {finish, PosX, PosY};
-  %  false ->
-  %    {Val, PosX, PosY}
-  %  end
-  %end,
-  %[Check_for_finish(Value, XPos, YPos, Map)
-  %  || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
+  check_next_move(X, Y, Map, length(lists:nth(1, Map))).
 
 check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
   io:format("3_1~n"),
@@ -187,8 +183,14 @@ check_next_move(X, Y, Map, _MapWidth) ->
 
 spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
   io:format("Args: ~p~n~p~n~p~n~p~n~p~n", [X, Y, Map, ParentPid, Path]),
-  ProcName = "scout_" ++ integer_to_list(erlang:unique_integer([positive])),
-  %ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
+  %ProcName = "scout_" ++ integer_to_list(erlang:unique_integer([positive])),
+  ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
   io:format("ProcName: ~p~n", [ProcName]),
-  NewP = gen_server:start_link({local, list_to_atom(ProcName)}, ?MODULE, [{X, Y, Map, ParentPid, [{X, Y} |Path]}], []),
-  io:format("Spawned ~p~n", [NewP]).
+  {ok, NewP} = gen_server:start_link(
+    {local, list_to_atom(ProcName)},
+    ?MODULE,
+    [{X, Y, Map, ParentPid, [{X, Y} | Path], []}],
+    []
+  ),
+  io:format("Spawned ~p~n", [NewP]),
+  NewP.
