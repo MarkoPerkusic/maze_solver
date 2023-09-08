@@ -3,7 +3,8 @@
 -record(state, { x_y_cord, map, parent, path, monitored}).
 
 
--export([start_link/1, stop/1, show_progress/0, move/0]).
+%-export([start_link/1, stop/1, show_progress/0, move/0]).
+-export([start_link/1, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/1, code_change/3]).
 
 
@@ -13,7 +14,6 @@
 
 start_link(ParentPid) ->
   Maze_map = load_maze(),
-  io:format("ParentPid ~p~n", [ParentPid]),
   gen_server:start_link(
       {local, ?MODULE},
       ?MODULE,
@@ -22,13 +22,14 @@ start_link(ParentPid) ->
   ).
 
 stop(Pid) ->
+  io:format("STOP callled! Starting termination!"),
   gen_server:cast(Pid, stop).
 
-show_progress() ->
-  gen_server:call(?MODULE, status).
+%show_progress() ->
+%  gen_server:call(?MODULE, status).
 
-move() ->
-  gen_server:cast(?MODULE, explore).
+%move() ->
+%  gen_server:cast(?MODULE, explore).
 
 
 %% ---------------------------------------------------------------------------
@@ -36,8 +37,6 @@ move() ->
 %% ---------------------------------------------------------------------------
 
 init([{PosX, PosY, MazeMap, ParentPid, Path, Monitored}]) ->
-  io:format("-------------------------------My PID is: ~p---------------------------------~n", [self()]),
-  io:format("State is ~p~n~p~n~p~n~p~n~p~n", [PosX, PosY, MazeMap, ParentPid, Path]),
   gen_server:cast(self(), explore),
   {ok, #state{
     x_y_cord = {PosX, PosY},
@@ -47,10 +46,8 @@ init([{PosX, PosY, MazeMap, ParentPid, Path, Monitored}]) ->
     monitored = Monitored}
   }.
 
-handle_call(stop, _From, State) ->
-  {stop, normal, ok, State};
 handle_call(status, _From, State) ->
-  io:format("Current status is: ~p~n!", [State#state.path]),
+  io:format("Current status is: ~p~n!", [lists:reverse(State#state.path)]),
   {reply, State#state.path, State};
 handle_call(_Arg0, _Arg1, _Arg2) ->
   erlang:error(not_implemented).
@@ -63,27 +60,17 @@ handle_cast(explore,
       path = Path,
       monitored = Monitored
     } = State) ->
-  io:format("State~p~n", [State]),
-  io:format("~p~nExploring!", [self()]),
-  Ra = check_next_move(X, Y, Map),
-  io:format("Ra~p~n", [Ra]),
-  %Result = lists:filter(fun({_, Xpos, Ypos}) -> not lists:member({Xpos, Ypos}, Path) end, Ra),
-  Result = lists:filter(fun(R) -> path_filter(R, Path) end, Ra),
-  io:format("Result: ~p~n", [Result]),
+  Result = lists:filter(fun(R) -> path_filter(R, Path) end, check_next_move(X, Y, Map)),
   {Verdict, NewState} = case Result of
     [] ->
-      io:format("------------------------> ~p dead~n", [self()]),
       {dead_end, State};
     [{finish, NewX, NewY}] ->
-      io:format("------------------------> finish~n"),
       NewS = State#state{x_y_cord = {NewX, NewY}},
       {finish, NewS};
     [{"*", NewX, NewY}] ->
-      io:format("------------------------> ~p explore~n", [self()]),
       NewS = State#state{x_y_cord = {NewX, NewY}, path = [{NewX, NewY} | Path]},
       {explore, NewS};
     _ ->
-      io:format("------------------------> ~p idle~n", [self()]),
       Refs = [spawn_scouts(R, Map, self(), Path) || {_, _NewX, _NewY}  = R <- Result],
       NewS = State#state{monitored = lists:append(Refs, Monitored)},
       {idle, NewS}
@@ -98,16 +85,21 @@ handle_cast(idle, State) ->
 handle_cast(finish, State) ->
   %% The finish has been reached
   io:format("Exit reached!~n"),
-  io:format("Path: ~p~n", [lists:reverse(State#state.path)]),
+  PathFromStart = lists:reverse(State#state.path),
+  io:format("Path: ~p~n", [PathFromStart]),
+  %gen_server:cast(State#state.parent, {finish, PathFromStart}),
   {noreply, State};
 handle_cast(dead_end, State) ->
   %% The spawned process has reached dead end
-  io:format("Dead end reached!~n~p~n", [State]),
+  io:format("Dead end reached!"),
   {noreply, State};
 handle_cast(stop, State) ->
   %% Terminate
   io:format("Calling terminate!"),
   terminate(State);
+%handle_cast({finish, FinalPath}, State) ->
+%  io:format("Sending final path!"),
+%  {noreply, State#state{path = FinalPath}};
 handle_cast(_Arg0, _Arg1) ->
   erlang:error(not_implemented).
 
@@ -155,42 +147,31 @@ path_filter({_Val, X, Y}, Path) ->
   not lists:member({X, Y}, Path).
 
 check_next_move(0, 0, Map) ->
-  io:format("1~n"),
   %% Search for the entry point that is on the left side of the maze.
   PossibleEntryPoints = [{[lists:nth(1, lists:nth(ValY, Map))], 1, ValY} || ValY <- lists:seq(1, length(Map))],
-  io:format("~p~n",[PossibleEntryPoints]),
   [{"*", 1, NewY} || {Value, _, NewY} <- PossibleEntryPoints, Value == "*"];
 check_next_move(_, Y, Map) when Y == length(Map) ->
   %% The last line is lower wall,
   %% normally our position should never be equal to that one
-  io:format("2~n"),
   throw("Crashed in to the wall!!!");
 check_next_move(X, Y, Map) ->
-  io:format("3~n"),
   check_next_move(X, Y, Map, length(lists:nth(1, Map))).
 
 check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
-  io:format("3_1~n"),
   [{finish, X, Y}];
 check_next_move(X, Y, Map, _MapWidth) ->
-  io:format("3_2~n"),
   Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
   Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
   Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
-  io:format("~n~p~n~p~n~p~n", [Forward_cell, Down_cell, Up_cell]),
   [{Value, XPos, YPos}
     || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
 
 spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
-  io:format("Args: ~p~n~p~n~p~n~p~n~p~n", [X, Y, Map, ParentPid, Path]),
-  %ProcName = "scout_" ++ integer_to_list(erlang:unique_integer([positive])),
   ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
-  io:format("ProcName: ~p~n", [ProcName]),
   {ok, NewP} = gen_server:start_link(
     {local, list_to_atom(ProcName)},
     ?MODULE,
     [{X, Y, Map, ParentPid, [{X, Y} | Path], []}],
     []
   ),
-  io:format("Spawned ~p~n", [NewP]),
   NewP.
