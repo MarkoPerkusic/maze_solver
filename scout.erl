@@ -1,9 +1,14 @@
 -module(scout).
 -behaviour(gen_server).
--record(state, { x_y_cord, map, parent, path, monitored}).
+-record(state, {
+  x_y_cord :: {integer(), integer()},
+  map :: [string()],
+  parent :: pid(),
+  path :: [tuple()],
+  monitored :: pid()
+}).
 
 
-%-export([start_link/1, stop/1, show_progress/0, move/0]).
 -export([start_link/1, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/1, code_change/3]).
 
@@ -12,6 +17,7 @@
 %% API functions
 %% ---------------------------------------------------------------------------
 
+-spec start_link(pid()) -> {ok, pid()}.
 start_link(ParentPid) ->
   Maze_map = load_maze(),
   gen_server:start_link(
@@ -21,21 +27,17 @@ start_link(ParentPid) ->
       []
   ).
 
+-spec stop(pid()) -> ok.
 stop(Pid) ->
   io:format("STOP callled! Starting termination!"),
   gen_server:cast(Pid, stop).
-
-%show_progress() ->
-%  gen_server:call(?MODULE, status).
-
-%move() ->
-%  gen_server:cast(?MODULE, explore).
 
 
 %% ---------------------------------------------------------------------------
 %% gen_server functions
 %% ---------------------------------------------------------------------------
 
+-spec init([{integer(), integer(), term(), pid(), list(), term()}]) -> {ok, #state{}}.
 init([{PosX, PosY, MazeMap, ParentPid, Path, Monitored}]) ->
   gen_server:cast(self(), explore),
   {ok, #state{
@@ -46,12 +48,14 @@ init([{PosX, PosY, MazeMap, ParentPid, Path, Monitored}]) ->
     monitored = Monitored}
   }.
 
+-spec handle_call(atom(), any(), #state{}) -> {reply, [{integer(), integer()}], #state{}}.
 handle_call(status, _From, State) ->
   io:format("Current status is: ~p~n!", [lists:reverse(State#state.path)]),
   {reply, State#state.path, State};
 handle_call(_Arg0, _Arg1, _Arg2) ->
   erlang:error(not_implemented).
 
+-spec handle_cast(atom(), #state{}) -> {noreply, #state{}}.
 handle_cast(explore,
     #state{
       x_y_cord = {X, Y},
@@ -60,6 +64,7 @@ handle_cast(explore,
       path = Path,
       monitored = Monitored
     } = State) ->
+
   Result = lists:filter(fun(R) -> path_filter(R, Path) end, check_next_move(X, Y, Map)),
   {Verdict, NewState} = case Result of
     [] ->
@@ -97,27 +102,28 @@ handle_cast(stop, State) ->
   %% Terminate
   io:format("Calling terminate!"),
   terminate(State);
-%handle_cast({finish, FinalPath}, State) ->
-%  io:format("Sending final path!"),
-%  {noreply, State#state{path = FinalPath}};
 handle_cast(_Arg0, _Arg1) ->
   erlang:error(not_implemented).
 
+-spec handle_info(any(), #state{}) -> {noreply, #state{}}.
 handle_info(Info, State) ->
   io:format("Info: ~p~n", [Info]),
   {noreply, State}.
 
+-spec terminate(#state{}) -> ok.
 terminate(State) ->
   %% Terminate process and his spawned processes.
+  io:format("TERMINATING!~n"),
   lists:foreach(
     fun(MonitoredPid) ->
-      gen_server:cast(MonitoredPid, stop)
+      gen_server:cast(MonitoredPid, stop),
+      ok
     end,
     State#state.monitored
   ),
-  io:format("TERMINATING!~n"),
-  {stop, normal, State}.
+  ok.
 
+-spec code_change(any(), #state{}, any()) -> {ok, #state{}}.
 code_change(_Old, State, _Additional) ->
   {ok, State}.
 
@@ -138,6 +144,7 @@ load_maze() ->
     "#######"
   ].
 
+-spec path_filter({atom(), integer(), integer()}, [{integer(), integer()}]) -> boolean().
 path_filter({finish, _X,_Y}, _Path) ->
   %% Exit from the maze detected
   true;
@@ -146,6 +153,7 @@ path_filter({_Val, X, Y}, Path) ->
   %% already in Path to prevent walk in the circle
   not lists:member({X, Y}, Path).
 
+-spec check_next_move(integer(), integer(), [string()]) -> [{atom(), integer(), integer()}].
 check_next_move(0, 0, Map) ->
   %% Search for the entry point that is on the left side of the maze.
   PossibleEntryPoints = [{[lists:nth(1, lists:nth(ValY, Map))], 1, ValY} || ValY <- lists:seq(1, length(Map))],
@@ -157,16 +165,22 @@ check_next_move(_, Y, Map) when Y == length(Map) ->
 check_next_move(X, Y, Map) ->
   check_next_move(X, Y, Map, length(lists:nth(1, Map))).
 
+-spec check_next_move(integer(), integer(), [string()], integer()) -> [{atom(), integer(), integer()}].
 check_next_move(X, Y, _Map, MapWidth) when X == MapWidth ->
+  %% Reached the end of the maze.
   [{finish, X, Y}];
 check_next_move(X, Y, Map, _MapWidth) ->
+  %% Check the next 3 possible cells to move
   Forward_cell = {[lists:nth(X + 1, lists:nth(Y, Map))], X + 1, Y},
   Up_cell = {[lists:nth(X, lists:nth(Y - 1, Map))], X, Y - 1},
   Down_cell = {[lists:nth(X, lists:nth(Y + 1, Map))], X, Y + 1},
   [{Value, XPos, YPos}
     || _ = {Value, XPos, YPos} <- [Forward_cell, Up_cell, Down_cell], Value == "*"].
 
+-spec spawn_scouts({_, integer(), integer()}, [string()], pid(), [{integer(), integer()}]) -> pid().
 spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
+  %% Create new processes and name them
+  %% according to the X and Y positions
   ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
   {ok, NewP} = gen_server:start_link(
     {local, list_to_atom(ProcName)},
