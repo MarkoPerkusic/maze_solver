@@ -134,15 +134,7 @@ code_change(_Old, State, _Additional) ->
 
 load_maze() ->
   %% To be implemented, for now return the hardcoded one
-  [
-    "#######",
-    "#*#***#",
-    "**#*#*#",
-    "#*#*#*#",
-    "#***#**",
-    "#*###*#",
-    "#######"
-  ].
+  maze_loader:load().
 
 -spec path_filter({atom(), integer(), integer()}, [{integer(), integer()}]) -> boolean().
 path_filter({finish, _X,_Y}, _Path) ->
