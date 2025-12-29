@@ -15,10 +15,13 @@ To use the maze solver, follow these steps:
 
 1. Compile the scout.erl file using Erlang's compiler.
 
-2.Start the solver by calling the start_link/0 function in the scout module.
+2.Start the solver by calling the start_link/1 function in the scout module: scout:start_link(self()).
+You will be prompted to enter a maze file path. You will have 2 options.
+Option1 - press Enter and it will load default map: maps/test_map.txt
+Option2 - enter custom path, e.g: maps/my_maze.txt
 The solver will automatically start exploring the maze from the entrance to the exit based on the assumptions mentioned above.
 
-To stop the solver, you can use the stop/0 function.
+To stop the solver, you can use the stop/0 function: scout:stop(whereis(scout)).
 
 Customization:
 The solver's behavior can be customized by modifying the code. If you wish to change the movement directions, entrance and exit locations, or maze representation, 

@@ -4,8 +4,8 @@
   x_y_cord :: {integer(), integer()},
   map :: [string()],
   parent :: pid(),
-  path :: [tuple()],
-  monitored :: pid()
+  path :: [{integer(), integer()}],
+  monitored :: [pid()]
 }).
 
 
@@ -99,9 +99,7 @@ handle_cast(dead_end, State) ->
   io:format("Dead end reached!"),
   {noreply, State};
 handle_cast(stop, State) ->
-  %% Terminate
-  io:format("Calling terminate!"),
-  terminate(State);
+  {stop, normal, State};
 handle_cast(_Arg0, _Arg1) ->
   erlang:error(not_implemented).
 
@@ -112,12 +110,10 @@ handle_info(Info, State) ->
 
 -spec terminate(#state{}) -> ok.
 terminate(State) ->
-  %% Terminate process and his spawned processes.
-  io:format("TERMINATING!~n"),
+  io:format("TERMINATING ~p~n", [self()]),
   lists:foreach(
-    fun(MonitoredPid) ->
-      gen_server:cast(MonitoredPid, stop),
-      ok
+    fun(Pid) ->
+      gen_server:cast(Pid, stop)
     end,
     State#state.monitored
   ),
@@ -145,7 +141,7 @@ path_filter({_Val, X, Y}, Path) ->
   %% already in Path to prevent walk in the circle
   not lists:member({X, Y}, Path).
 
--spec check_next_move(integer(), integer(), [string()]) -> [{atom(), integer(), integer()}].
+-spec check_next_move(integer(), integer(), [string()]) -> [{string() | atom(), integer(), integer()}].
 check_next_move(0, 0, Map) ->
   %% Search for the entry point that is on the left side of the maze.
   PossibleEntryPoints = [{[lists:nth(1, lists:nth(ValY, Map))], 1, ValY} || ValY <- lists:seq(1, length(Map))],
@@ -174,10 +170,13 @@ spawn_scouts({_, X, Y}, Map, ParentPid, Path) ->
   %% Create new processes and name them
   %% according to the X and Y positions
   ProcName = "scout_" ++ integer_to_list(X) ++ "_" ++ integer_to_list(Y),
-  {ok, NewP} = gen_server:start_link(
+  
+  case gen_server:start_link(
     {local, list_to_atom(ProcName)},
     ?MODULE,
     [{X, Y, Map, ParentPid, [{X, Y} | Path], []}],
-    []
-  ),
-  NewP.
+    []) 
+  of
+    {ok, NewP} -> NewP;
+    {error, {already_started, Pid}} -> Pid
+  end.
