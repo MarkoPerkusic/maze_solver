@@ -1,29 +1,45 @@
-# maze_solver
-A simple erlang program to find path in maze.
-This Erlang application is designed to solve mazes by autonomously navigating through the maze from the entrance (left side) to the exit (right side). 
-The maze solver follows the assumption that it can move only forward, up, and down. Walls are represented by the # symbol, and paths are represented by the * symbol.
+# Maze Solver
 
-Assumptions:
-1. Movement Restrictions: The maze solver is only capable of moving forward, upward, and downward. It cannot move diagonally or backward.
+A simple Erlang program to find a path in a maze.
 
-2. Entrance and Exit: The maze entrance is assumed to be located on the left side of the maze, and the exit is assumed to be located on the right side.
+## Features
+- Autonomous maze exploration
+- Supports only forward, up, and down moves
+- Maze represented with `#` for walls and `*` for paths
 
-3. Maze Representation: The maze is represented as a grid of characters where # represents walls, and * represents paths that the solver can traverse.
+## Assumptions
+1. **Movement:** No diagonal or backward movement.
+2. **Entrance & Exit:** Left side = entrance, right side = exit.
+3. **Maze Representation:** Grid of characters (`#` walls, `*` paths).
 
-Getting Started:
-To use the maze solver, follow these steps:
+## Getting Started
 
-1. Compile the scout.erl file using Erlang's compiler.
+1. Compile the `scout.erl` file in Erlang shell:
+   ```erlang
+   c(scout).
 
-2.Start the solver by calling the start_link/1 function in the scout module: scout:start_link(self()).
-You will be prompted to enter a maze file path. You will have 2 options.
-Option1 - press Enter and it will load default map: maps/test_map.txt
-Option2 - enter custom path, e.g: maps/my_maze.txt
-The solver will automatically start exploring the maze from the entrance to the exit based on the assumptions mentioned above.
+2. Start the solver:
+   ```erlang
+   scout:start_link(self()).
 
-To stop the solver, you can use the stop/0 function: scout:stop(whereis(scout)).
+Press Enter for default map (maps/test_map.txt)
+Or enter a custom map path (maps/my_maze.txt)
 
-Customization:
-The solver's behavior can be customized by modifying the code. If you wish to change the movement directions, entrance and exit locations, or maze representation, 
-you can do so by adjusting the appropriate parts of the code in the scout module. 
-Please note that this application is a simple demonstration of an autonomous maze solver and may not be optimal for all maze types.
+3. Stop the solver:
+   ```erlang
+   scout:stop(whereis(scout)).
+
+## Customization
+   ```markdown
+   #######
+   #*#***#
+   **#*#*#
+   #*#*#*#
+   #***#**
+   #*###*#
+   #######
+
+## Example Path Found
+   ```rust
+   (0,1) -> (1,1) -> (2,1) -> ... -> (6,5)
+
