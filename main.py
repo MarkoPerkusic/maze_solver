@@ -4,8 +4,9 @@ CELL_SIZE = 20
 WALL_COLOR = "#2e2e2e"
 PATH_COLOR = "#ffffff"
 
-MAX_VIEW_W = 950   # maksimalna vidljiva širina u px
-MAX_VIEW_H = 520   # maksimalna vidljiva visina u px
+MAX_VIEW_W = 950   # max width in px
+MAX_VIEW_H = 520   # max height in u px
+
 
 def load_maze(path):
     with open(path, "r") as f:
@@ -16,6 +17,7 @@ def load_maze(path):
     width = max(len(ln) for ln in lines)
     return [list(ln.ljust(width, "#")) for ln in lines]
 
+
 def draw_maze(graph: sg.Graph, maze):
     graph.erase()
     rows = len(maze)
@@ -24,7 +26,7 @@ def draw_maze(graph: sg.Graph, maze):
     for y in range(rows):
         for x in range(cols):
             cell = maze[y][x]
-            color = PATH_COLOR if cell == "*" else WALL_COLOR
+            color = PATH_COLOR if cell in ["*", "G", "S"] else WALL_COLOR
 
             x0 = x * CELL_SIZE
             y0 = (rows - 1 - y) * CELL_SIZE
@@ -34,10 +36,11 @@ def draw_maze(graph: sg.Graph, maze):
             graph.draw_rectangle((x0, y0), (x1, y1),
                                  fill_color=color, line_color="#444444")
 
+
 def main():
     sg.theme("DarkGrey13")
 
-    # placeholder graph, zamijenit ćemo ga kad učitamo mapu
+    # placeholder graph, replace it when map is loaded
     graph = sg.Graph(
         canvas_size=(MAX_VIEW_W, MAX_VIEW_H),
         graph_bottom_left=(0, 0),
@@ -46,7 +49,7 @@ def main():
         key="-GRAPH-",
     )
 
-    # scrollable viewport za labirint
+    # scrollable viewport
     maze_view = sg.Column(
         [[graph]],
         key="-MAZE_VIEW-",
@@ -81,7 +84,6 @@ def main():
                 maze_w = cols * CELL_SIZE
                 maze_h = rows * CELL_SIZE
 
-                # vidljiva veličina ostaje ograničena, ali "virtualna" je veličina labirinta
                 view_w = min(MAX_VIEW_W, maze_w)
                 view_h = min(MAX_VIEW_H, maze_h)
 
@@ -93,7 +95,7 @@ def main():
                     key="-GRAPH-",
                 )
 
-                # zamijeni sadržaj u scrollable koloni
+                # replace the content in scrollable column
                 window["-MAZE_VIEW-"].update([[]])
                 window.extend_layout(window["-MAZE_VIEW-"], [[new_graph]])
                 window.refresh()
@@ -105,6 +107,6 @@ def main():
 
     window.close()
 
+
 if __name__ == "__main__":
     main()
-
