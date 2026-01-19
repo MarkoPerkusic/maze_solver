@@ -122,7 +122,7 @@ handle_info({found, PathFromChild}, S=#state{parent=Parent, monitored=Mon}) ->
   lists:foreach(fun({Pid,_Ref}) -> catch gen_server:cast(Pid, stop) end, Mon),
   Parent ! {found, PathFromChild},
   {noreply, S};
-handle_info({'DOWN', Ref, process, Pid, Reason}, S=#state{monitored=Mon, x_y_cord=Pos}) ->
+handle_info({'DOWN', Ref, process, Pid, Reason}, S=#state{monitored=Mon, x_y_cord=_Pos}) ->
   dbg("INFO DOWN pid=~p reason=~p", [Pid, Reason]),
   NewMon = [PR || PR={_P,R} <- Mon, R =/= Ref],
   {noreply, S#state{monitored=NewMon}};

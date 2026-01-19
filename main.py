@@ -1,11 +1,19 @@
 import PySimpleGUI as sg
+import subprocess
+import re
 
 CELL_SIZE = 20
 WALL_COLOR = "#2e2e2e"
 PATH_COLOR = "#ffffff"
+START_COLOR = "#2ecc71"
+GOAL_COLOR = "#e74c3c"
+SOLUTION_COLOR = "#f1c40f"  # yellow overlay
 
-MAX_VIEW_W = 950   # max width in px
-MAX_VIEW_H = 520   # max height in u px
+MAX_VIEW_W = 950
+MAX_VIEW_H = 520
+
+# Where compiled Erlang .beam files live (adjust if needed)
+BEAM_PATH = "."  # or "ebin"
 
 
 def load_maze(path):
@@ -18,6 +26,25 @@ def load_maze(path):
     return [list(ln.ljust(width, "#")) for ln in lines]
 
 
+def compile_erlang():
+    subprocess.run(["erlc", "*.erl"], shell=True, check=True)
+
+
+def solve_with_erlang(map_path: str, beam_path: str = "."):
+    expr = f'solve_cli:run("{map_path}").'
+    cmd = ["erl", "-noshell", "-pa", beam_path, "-eval", expr, "-s", "init", "stop"]
+
+    p = subprocess.run(cmd, text=True, capture_output=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"Erlang failed:\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}")
+
+    out = p.stdout.strip()
+    if out in ("", "no_solution"):
+        return None
+
+    return [(int(x), int(y)) for x, y in re.findall(r"\{(\d+),(\d+)\}", out)]
+
+
 def draw_maze(graph: sg.Graph, maze):
     graph.erase()
     rows = len(maze)
@@ -26,7 +53,14 @@ def draw_maze(graph: sg.Graph, maze):
     for y in range(rows):
         for x in range(cols):
             cell = maze[y][x]
-            color = PATH_COLOR if cell in ["*", "G", "S"] else WALL_COLOR
+            if cell == "#":
+                color = WALL_COLOR
+            elif cell == "S":
+                color = START_COLOR
+            elif cell == "G":
+                color = GOAL_COLOR
+            else:
+                color = PATH_COLOR  # includes '*'
 
             x0 = x * CELL_SIZE
             y0 = (rows - 1 - y) * CELL_SIZE
@@ -37,10 +71,34 @@ def draw_maze(graph: sg.Graph, maze):
                                  fill_color=color, line_color="#444444")
 
 
+def draw_solution_path(graph: sg.Graph, path, rows: int):
+    """
+    Draws solution path overlay on the graph.
+    path is list of (x,y) in 1-based Erlang coordinates.
+    """
+    if not path:
+        return
+
+    for (x1b, y1b) in path:
+        # Convert Erlang 1-based to Python 0-based cell indices
+        x = x1b - 1
+        y = y1b - 1
+
+        # Convert cell indices to graph pixels (same as draw_maze)
+        x0 = x * CELL_SIZE
+        y0 = (rows - 1 - y) * CELL_SIZE
+        x1 = x0 + CELL_SIZE
+        y1 = y0 + CELL_SIZE
+
+        # Draw a smaller rectangle on top so S/G colors still visible if you want
+        pad = 4
+        graph.draw_rectangle((x0 + pad, y0 + pad), (x1 - pad, y1 - pad),
+                             fill_color=SOLUTION_COLOR, line_color=SOLUTION_COLOR)
+
+
 def main():
     sg.theme("DarkGrey13")
 
-    # placeholder graph, replace it when map is loaded
     graph = sg.Graph(
         canvas_size=(MAX_VIEW_W, MAX_VIEW_H),
         graph_bottom_left=(0, 0),
@@ -49,13 +107,12 @@ def main():
         key="-GRAPH-",
     )
 
-    # scrollable viewport
     maze_view = sg.Column(
         [[graph]],
         key="-MAZE_VIEW-",
         scrollable=True,
         vertical_scroll_only=False,
-        size=(MAX_VIEW_W + 20, MAX_VIEW_H + 20),  # malo prostora za scroll bar
+        size=(MAX_VIEW_W + 20, MAX_VIEW_H + 20),
         expand_x=False,
         expand_y=False
     )
@@ -77,7 +134,11 @@ def main():
 
         if event == "Load Maze":
             try:
-                maze = load_maze(values["-FILE-"])
+                file_path = values["-FILE-"]
+                if not file_path:
+                    raise ValueError("Please select a maze file first.")
+
+                maze = load_maze(file_path)
                 rows = len(maze)
                 cols = len(maze[0])
 
@@ -95,15 +156,28 @@ def main():
                     key="-GRAPH-",
                 )
 
-                # replace the content in scrollable column
                 window["-MAZE_VIEW-"].update([[]])
                 window.extend_layout(window["-MAZE_VIEW-"], [[new_graph]])
                 window.refresh()
 
+                # Draw maze
                 draw_maze(window["-GRAPH-"], maze)
 
+                compile_erlang()
+
+                # Solve with Erlang and draw path
+                path = solve_with_erlang(file_path, BEAM_PATH)
+                if path is None:
+                    sg.popup("No solution found.")
+                else:
+                    draw_solution_path(window["-GRAPH-"], path, rows)
+
+            except subprocess.CalledProcessError as e:
+                sg.popup_error(f"Erlang solver failed:\n{e}\n\nMake sure BEAM_PATH is correct: {BEAM_PATH}")
+            except FileNotFoundError:
+                sg.popup_error("Could not run 'erl'. Is Erlang installed and in your PATH?")
             except Exception as e:
-                sg.popup_error(f"Failed to load maze:\n{e}")
+                sg.popup_error(f"Failed to load/solve maze:\n{e}")
 
     window.close()
 

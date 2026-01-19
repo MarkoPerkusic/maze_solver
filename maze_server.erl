@@ -19,7 +19,7 @@
 -module(maze_server).
 -behaviour(gen_server).
 
--export([start_link/0, stop/1]).
+-export([start_link/0, start_link/1, stop/1]).
 -export([get_start/1, get_goal/1, neighbors/2,
          visit/2, set_solution/2, get_solution/1]).
 
@@ -41,6 +41,8 @@
 %% Starts and loads a maze by prompting the user (via maze_loader:load/0)
 start_link() ->
     gen_server:start_link(?MODULE, noargs, []).
+start_link(Path) ->
+    gen_server:start_link(?MODULE, {from_file, Path}, []).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
@@ -65,31 +67,16 @@ set_solution(Pid, Path) ->
 get_solution(Pid) ->
     gen_server:call(Pid, get_solution).
 
+
 %%% ===== gen_server callbacks =====
 
 init(noargs) ->
-    process_flag(trap_exit, true),
     Grid0 = maze_loader:load(),
-    Grid = normalize_grid(Grid0),
-    H = length(Grid),
-    W = case Grid of [] -> 0; [R|_] -> length(R) end,
+    init_from_grid(Grid0);
 
-    Start = find_char(Grid, $S),
-    Goal = find_char(Grid, $G),
-
-    %% You want these to exist; crash early if not found
-    case {Start, Goal} of
-        {undefined, _} -> {stop, {error, no_start_found}};
-        {_, undefined} -> {stop, {error, no_goal_found}};
-        {SPos, GPos} ->
-            Vis0 = sets:new(),
-            Vis1 = sets:add_element(SPos, Vis0),
-            {ok, #state{
-                grid=Grid, width=W, height=H,
-                start=SPos, goal=GPos,
-                visited=Vis1
-            }}
-    end.
+init({from_file, Path}) ->
+    Grid0 = maze_loader:load(Path),
+    init_from_grid(Grid0).
 
 handle_call(get_start, _From, S=#state{start=Start}) ->
     {reply, Start, S};
@@ -137,6 +124,28 @@ code_change(_OldVsn, S, _Extra) ->
     {ok, S}.
 
 %%% ===== Internal helpers =====
+
+init_from_grid(Grid0) ->
+    process_flag(trap_exit, true),
+    Grid = normalize_grid(Grid0),
+    H = length(Grid),
+    W = case Grid of [] -> 0; [R|_] -> length(R) end,
+
+    Start = find_char(Grid, $S),
+    Goal  = find_char(Grid, $G),
+
+    case {Start, Goal} of
+        {undefined, _} -> {stop, {error, no_start_found}};
+        {_, undefined} -> {stop, {error, no_goal_found}};
+        {SPos, GPos} ->
+            Vis0 = sets:new(),
+            Vis1 = sets:add_element(SPos, Vis0),
+            {ok, #state{
+                grid=Grid, width=W, height=H,
+                start=SPos, goal=GPos,
+                visited=Vis1
+            }}
+    end.
 
 %% Ensure all rows are the same width (pad with spaces if needed)
 normalize_grid(Grid) ->
